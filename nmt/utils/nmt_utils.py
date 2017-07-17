@@ -16,12 +16,10 @@
 """Utility functions specifically for NMT."""
 from __future__ import print_function
 
+import tensorflow as tf
 import time
 
-import tensorflow as tf
-
-from ..utils import evaluation_utils
-from ..utils import misc_utils as utils
+from ..utils import evaluation_utils, misc_utils as utils
 
 __all__ = ["decode_and_evaluate", "get_translation", "print_translation"]
 
@@ -36,64 +34,64 @@ def decode_and_evaluate(name,
                         beam_width,
                         tgt_eos,
                         decode=True):
-  """Decode a test set and compute a score according to the evaluation task."""
-  # Decode
-  if decode:
-    utils.print_out("  decoding to output %s." % trans_file)
+    """Decode a test set and compute a score according to the evaluation task."""
+    # Decode
+    if decode:
+        utils.print_out("  decoding to output %s." % trans_file)
 
-    start_time = time.time()
-    num_sentences = 0
-    with tf.gfile.GFile(trans_file, mode="w") as trans_f:
-      trans_f.write("")  # Write empty string to ensure file is created.
+        start_time = time.time()
+        num_sentences = 0
+        with tf.gfile.GFile(trans_file, mode="w") as trans_f:
+            trans_f.write("")  # Write empty string to ensure file is created.
 
-      while True:
-        try:
-          nmt_outputs, _ = model.decode(sess)
+            while True:
+                try:
+                    nmt_outputs, _ = model.decode(sess)
 
-          if beam_width > 0:
-            # get the top translation.
-            nmt_outputs = nmt_outputs[0]
+                    if beam_width > 0:
+                        # get the top translation.
+                        nmt_outputs = nmt_outputs[0]
 
-          num_sentences += len(nmt_outputs)
-          for sent_id in range(len(nmt_outputs)):
-            translation = get_translation(
-                nmt_outputs,
-                sent_id,
-                tgt_eos=tgt_eos,
+                    num_sentences += len(nmt_outputs)
+                    for sent_id in range(len(nmt_outputs)):
+                        translation = get_translation(
+                            nmt_outputs,
+                            sent_id,
+                            tgt_eos=tgt_eos,
+                            bpe_delimiter=bpe_delimiter)
+                        trans_f.write("%s\n" % translation)
+                except tf.errors.OutOfRangeError:
+                    utils.print_time("  done, num sentences %d" % num_sentences,
+                                     start_time)
+                    break
+
+    # Evaluation
+    evaluation_scores = {}
+    if ref_file and tf.gfile.Exists(trans_file):
+        for metric in metrics:
+            score = evaluation_utils.evaluate(
+                ref_file,
+                trans_file,
+                metric,
                 bpe_delimiter=bpe_delimiter)
-            trans_f.write("%s\n" % translation)
-        except tf.errors.OutOfRangeError:
-          utils.print_time("  done, num sentences %d" % num_sentences,
-                           start_time)
-          break
+            evaluation_scores[metric] = score
+            utils.print_out("  %s %s: %.1f" % (metric, name, score))
 
-  # Evaluation
-  evaluation_scores = {}
-  if ref_file and tf.gfile.Exists(trans_file):
-    for metric in metrics:
-      score = evaluation_utils.evaluate(
-          ref_file,
-          trans_file,
-          metric,
-          bpe_delimiter=bpe_delimiter)
-      evaluation_scores[metric] = score
-      utils.print_out("  %s %s: %.1f" % (metric, name, score))
-
-  return evaluation_scores
+    return evaluation_scores
 
 
 def get_translation(nmt_outputs, sent_id, tgt_eos, bpe_delimiter):
-  """Given batch decoding outputs, select a sentence and turn to text."""
-  # Select a sentence
-  output = nmt_outputs[sent_id, :].tolist()
+    """Given batch decoding outputs, select a sentence and turn to text."""
+    # Select a sentence
+    output = nmt_outputs[sent_id, :].tolist()
 
-  # If there is an eos symbol in outputs, cut them at that point.
-  if tgt_eos and tgt_eos in output:
-    output = output[:output.index(tgt_eos)]
+    # If there is an eos symbol in outputs, cut them at that point.
+    if tgt_eos and tgt_eos in output:
+        output = output[:output.index(tgt_eos)]
 
-  if not bpe_delimiter:
-    translation = utils.format_text(output)
-  else:  # BPE
-    translation = utils.format_bpe_text(output, delimiter=bpe_delimiter)
+    if not bpe_delimiter:
+        translation = utils.format_text(output)
+    else:  # BPE
+        translation = utils.format_bpe_text(output, delimiter=bpe_delimiter)
 
-  return translation
+    return translation
